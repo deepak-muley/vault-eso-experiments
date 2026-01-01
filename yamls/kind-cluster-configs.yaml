@@ -1,0 +1,20 @@
+# mgmt Cluster Configuration
+# Usage: kind create cluster --name mgmt --config=-
+---
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: mgmt
+nodes:
+- role: control-plane
+- role: worker
+
+---
+# Workload1 Cluster Configuration
+# Usage: kind create cluster --name workload1 --config=-
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: workload1
+nodes:
+- role: control-plane
+- role: worker
+

@@ -1,0 +1,20 @@
+# Temporary files
+/tmp/
+*.tmp
+*.log
+
+# Kubeconfig files
+*-kubeconfig
+*.kubeconfig
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
