@@ -18,6 +18,49 @@ ESO_RELEASE="external-secrets"
 
 echo -e "${GREEN}Starting Vault and External Secrets Operator setup...${NC}"
 
+# Step 0: Check and install prerequisites
+echo -e "${YELLOW}Step 0: Checking prerequisites...${NC}"
+
+# Check for vault CLI
+if ! command -v vault &> /dev/null; then
+    echo -e "${YELLOW}Vault CLI not found. Installing...${NC}"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if command -v brew &> /dev/null; then
+            brew install vault
+        else
+            echo -e "${RED}Homebrew not found. Please install Homebrew first:${NC}"
+            echo -e "${YELLOW}/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"${NC}"
+            echo -e "${RED}Or install Vault manually from: https://developer.hashicorp.com/vault/downloads${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${RED}Vault CLI not found. Please install it manually:${NC}"
+        echo -e "${YELLOW}Visit: https://developer.hashicorp.com/vault/downloads${NC}"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}✓ Vault CLI found: $(vault version | head -1)${NC}"
+fi
+
+# Check for other prerequisites
+if ! command -v kind &> /dev/null; then
+    echo -e "${RED}kind not found. Please install it first.${NC}"
+    exit 1
+fi
+
+if ! command -v kubectl &> /dev/null; then
+    echo -e "${RED}kubectl not found. Please install it first.${NC}"
+    exit 1
+fi
+
+if ! command -v helm &> /dev/null; then
+    echo -e "${RED}helm not found. Please install it first.${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}All prerequisites satisfied!${NC}"
+
 # Step 1: Delete existing kind clusters
 echo -e "${YELLOW}Step 1: Cleaning up existing kind clusters...${NC}"
 kind get clusters | while read cluster; do

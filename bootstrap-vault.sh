@@ -61,6 +61,10 @@ vault_exec kv put secret/app-credentials \
 
 echo -e "${GREEN}✓ Added secret/app-credentials${NC}"
 
+# Verify the secret was stored
+echo -e "${YELLOW}Verifying secret/app-credentials:${NC}"
+vault_exec kv get secret/app-credentials
+
 # Additional example secrets (optional)
 vault_exec kv put secret/database-credentials \
   host="db.example.com" \
@@ -71,12 +75,20 @@ vault_exec kv put secret/database-credentials \
 
 echo -e "${GREEN}✓ Added secret/database-credentials${NC}"
 
+# Verify the secret was stored
+echo -e "${YELLOW}Verifying secret/database-credentials:${NC}"
+vault_exec kv get secret/database-credentials
+
 vault_exec kv put secret/api-keys \
   github_token="ghp_example_token_12345" \
   aws_access_key="AKIAIOSFODNN7EXAMPLE" \
   aws_secret_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
 echo -e "${GREEN}✓ Added secret/api-keys${NC}"
+
+# Verify the secret was stored
+echo -e "${YELLOW}Verifying secret/api-keys:${NC}"
+vault_exec kv get secret/api-keys
 
 # List all secrets
 echo -e "${YELLOW}Listing all secrets in Vault:${NC}"

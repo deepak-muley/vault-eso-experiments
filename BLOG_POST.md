@@ -2,6 +2,8 @@
 
 Managing secrets in a multi-cluster Kubernetes environment can be challenging. In this guide, we'll explore how to use HashiCorp Vault as a centralized secrets management solution and External Secrets Operator (ESO) to automatically sync secrets across clusters — all without installing any components on workload clusters.
 
+> **📦 Complete Code Repository:** All scripts, YAML files, and configurations referenced in this guide are available in the [vault-eso-experiments GitHub repository](https://github.com/deepak-muley/vault-eso-experiments). Clone the repo to get started: `git clone https://github.com/deepak-muley/vault-eso-experiments.git`
+
 ## The Challenge
 
 In a multi-cluster setup, you often have:
@@ -161,12 +163,70 @@ Chart        | external-secrets/external-secrets
 
 Now we'll add a username and password to Vault that we want to sync across clusters.
 
+**Prerequisite: Install Vault CLI**
+
+Before proceeding, ensure you have the Vault CLI installed on your local machine. Here are installation methods for different platforms:
+
+**macOS (using Homebrew):**
 ```bash
-# Port forward Vault service
+brew install vault
+```
+
+**Linux:**
+```bash
+# Download and install
+wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update && sudo apt install vault
+```
+
+**Windows (using Chocolatey):**
+```bash
+choco install vault
+```
+
+**Or download directly:**
+Visit [https://developer.hashicorp.com/vault/downloads](https://developer.hashicorp.com/vault/downloads) and download the appropriate binary for your platform.
+
+**Verify installation:**
+```bash
+vault version
+```
+
+You should see output like: `Vault v1.x.x`
+
+**Step 4a: Port Forward Vault Service**
+
+First, we need to create a port forward from your local machine to the Vault service in the cluster:
+
+```bash
+# Port forward Vault service (runs in background)
 kubectl port-forward -n vault svc/vault 8200:8200 &
+```
+
+This forwards local port 8200 to the Vault service in the cluster. The `&` runs it in the background.
+
+**Step 4b: Configure Vault CLI**
+
+Set environment variables so the Vault CLI knows how to connect:
+
+```bash
+# Set Vault address to use the local port forward
 export VAULT_ADDR='http://127.0.0.1:8200'
+
+# Set the root token (for dev mode)
 export VAULT_TOKEN='root'
 
+# Verify connection (optional - wait a moment for port forward to be ready)
+sleep 2
+vault status
+```
+
+**Step 4c: Configure Vault Secrets Engine and Add Secrets**
+
+Now you can use the Vault CLI commands, which will automatically connect through the port forward:
+
+```bash
 # Enable KV secrets engine (version 2)
 vault secrets enable -version=2 -path=secret kv
 
@@ -174,7 +234,41 @@ vault secrets enable -version=2 -path=secret kv
 vault kv put secret/app-credentials \
   username="admin" \
   password="SuperSecretPassword123!"
+
+# Verify the secret was stored correctly
+vault kv get secret/app-credentials
+
+# List all secrets in the secret/ path
+vault kv list secret/
 ```
+
+The `vault kv get` command will show you the stored values, and `vault kv list` will show all secrets in that path.
+
+**Important Notes:**
+- The port forward must remain running while you use the Vault CLI
+- All `vault` commands will use `VAULT_ADDR` to connect to `http://127.0.0.1:8200`
+- The port forward redirects this to the Vault service in the cluster
+- To stop the port forward, use: `pkill -f "port-forward.*vault"` or find the process and kill it
+
+**Alternative: Using kubectl exec (No Port Forward Needed)**
+
+Instead of port forwarding, you can also run Vault CLI commands directly inside the Vault pod:
+
+```bash
+# Run vault commands inside the pod
+kubectl exec -n vault vault-0 -- vault secrets enable -version=2 -path=secret kv
+kubectl exec -n vault vault-0 -- vault kv put secret/app-credentials \
+  username="admin" \
+  password="SuperSecretPassword123!"
+
+# Verify the secret was stored
+kubectl exec -n vault vault-0 -- vault kv get secret/app-credentials
+
+# List all secrets
+kubectl exec -n vault vault-0 -- vault kv list secret/
+```
+
+This method doesn't require port forwarding or setting environment variables, as the Vault CLI runs directly in the pod where Vault is accessible at `http://127.0.0.1:8200`.
 
 **Vault Secret Structure:**
 
@@ -188,6 +282,8 @@ secret/app-credentials    | password | SuperSecretPassword123!
 ### Step 5: Create ExternalSecretStore
 
 The ExternalSecretStore (or ClusterSecretStore) defines how ESO connects to Vault.
+
+> **📄 YAML Files:** All YAML configurations are available in the [`yamls/` directory](https://github.com/deepak-muley/vault-eso-experiments/tree/main/yamls) of the repository.
 
 First, create a secret containing the Vault root token:
 
@@ -239,6 +335,8 @@ auth     | tokenSecretRef                                 | Authentication metho
 
 The ExternalSecret resource tells ESO which secrets to fetch from Vault and how to create Kubernetes secrets.
 
+> **📄 YAML File:** See [`yamls/external-secret.yaml`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/yamls/external-secret.yaml) in the repository.
+
 ```yaml
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -285,15 +383,19 @@ data[].remoteRef.property  | username/password       | Specific property to fetc
 
 This is where the magic happens! PushSecret pushes the Kubernetes secret from the management cluster to the workload cluster without requiring ESO on the workload cluster.
 
+> **📄 YAML File:** See [`yamls/push-secret.yaml`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/yamls/push-secret.yaml) in the repository.
+
 **Important:** The Kubernetes provider doesn't support kubeconfig directly. We need to extract authentication components (server URL, CA cert, client cert, and key) from the kubeconfig.
 
 First, prepare the kubeconfig and extract authentication info:
 
 ```bash
 # Prepare kubeconfig with internal network IP (for kind clusters)
+# Script available at: https://github.com/deepak-muley/vault-eso-experiments/blob/main/prepare-workload-kubeconfig.sh
 ./prepare-workload-kubeconfig.sh
 
 # Extract authentication components (server URL, CA cert, client cert, key)
+# Script available at: https://github.com/deepak-muley/vault-eso-experiments/blob/main/extract-kubeconfig-auth.sh
 ./extract-kubeconfig-auth.sh
 ```
 
@@ -371,14 +473,14 @@ data[].match.remoteRef.property    | username/password      | Key name in remote
 secretStoreRefs                    | kubernetes-remote-store| Reference to ClusterSecretStore
 ```
 
-**Note:** For kind clusters, the server URL must use the internal Docker network IP, not localhost. Use `prepare-workload-kubeconfig.sh` to update the kubeconfig accordingly.
+**Note:** For kind clusters, the server URL must use the internal Docker network IP, not localhost. Use [`prepare-workload-kubeconfig.sh`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/prepare-workload-kubeconfig.sh) to update the kubeconfig accordingly.
 
-**Automation:** The setup process can be automated using the provided scripts:
-- `prepare-workload-kubeconfig.sh` - Updates kubeconfig with internal IP
-- `extract-kubeconfig-auth.sh` - Extracts authentication components
-- `create-kubernetes-store.sh` - Creates the ClusterSecretStore with proper configuration
+**Automation:** The setup process can be automated using the provided scripts from the [repository](https://github.com/deepak-muley/vault-eso-experiments):
+- [`prepare-workload-kubeconfig.sh`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/prepare-workload-kubeconfig.sh) - Updates kubeconfig with internal IP
+- [`extract-kubeconfig-auth.sh`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/extract-kubeconfig-auth.sh) - Extracts authentication components
+- [`create-kubernetes-store.sh`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/create-kubernetes-store.sh) - Creates the ClusterSecretStore with proper configuration
 
-Or use the complete setup script: `./setup.sh` which handles all steps automatically.
+Or use the complete setup script: [`setup.sh`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/setup.sh) which handles all steps automatically.
 
 ## Verification
 
@@ -516,6 +618,11 @@ The key advantage is that workload clusters receive secrets without needing to i
 
 ## Resources
 
+- **[Complete Code Repository](https://github.com/deepak-muley/vault-eso-experiments)** - All scripts, YAML files, and configurations used in this guide
+  - [`setup.sh`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/setup.sh) - Complete automated setup script
+  - [`bootstrap-vault.sh`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/bootstrap-vault.sh) - Vault secrets bootstrap script
+  - [`yamls/`](https://github.com/deepak-muley/vault-eso-experiments/tree/main/yamls) - All YAML configuration files
+  - [`README.md`](https://github.com/deepak-muley/vault-eso-experiments/blob/main/README.md) - Detailed setup instructions
 - [HashiCorp Vault Documentation](https://developer.hashicorp.com/vault/docs)
 - [External Secrets Operator Documentation](https://external-secrets.io/)
 - [PushSecret API Reference](https://external-secrets.io/latest/api/pushsecret/)
